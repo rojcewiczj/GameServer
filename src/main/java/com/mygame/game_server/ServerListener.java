@@ -2,8 +2,11 @@ package com.mygame.game_server;
 
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
+import com.mygame.game_server.items.Axe;
+import com.mygame.game_server.items.Item;
 import com.mygame.game_server.models.Player;
 import com.mygame.game_server.models.World;
+import com.mygame.game_server.packets.ArrowFiredCommand;
 import com.mygame.game_server.packets.ChopTreeCommand;
 import com.mygame.game_server.packets.MoveCommand;
 import com.mygame.game_server.packets.RegisterName;
@@ -52,13 +55,34 @@ public class ServerListener extends Listener {
                 System.out.printf("➡ %s moved to (%.1f, %.1f)%n", player.name, player.x, player.y);
             }
         }
+        if (object instanceof ArrowFiredCommand shot) {
+            Player player = players.get(connection);
+            if (player == null || !player.hasArrow()) return;
+
+            player.removeOneArrow();
+
+            // Optional: broadcast the arrow firing to other players
+        }
         if (object instanceof ChopTreeCommand chop) {
             Player player = players.get(connection);
-            if (player == null || !player.hasItem("axe")) {
+
+            Axe axe = player.getEquippedAxe();
+            if (axe == null) {
                 System.out.println("❌ Player tried to chop without an axe");
                 return;
             }
 
+            // Check if player is in range of the tree
+            float dx = player.x - chop.x;
+            float dy = player.y - chop.y;
+            float dist = (float) Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > axe.range) {
+                System.out.printf("❌ %s is too far to chop (%.1f units, axe range %.1f)%n", player.name, dist, axe.range);
+                return;
+            }
+
+            // Find and remove the tree
             GamePoint toChop = null;
             for (GamePoint tree : world.trees) {
                 if (Math.abs(tree.x - chop.x) < 5 && Math.abs(tree.y - chop.y) < 5) {
@@ -69,7 +93,7 @@ public class ServerListener extends Listener {
 
             if (toChop != null) {
                 world.trees.remove(toChop);
-                player.addItem("wood");
+                player.inventory.add(new Item("wood"));
                 System.out.printf("🪓 %s chopped a tree at (%d, %d)%n", player.name, toChop.x, toChop.y);
             }
         }

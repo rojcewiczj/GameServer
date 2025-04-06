@@ -2,6 +2,7 @@ package com.mygame.game_server;
 
 import com.esotericsoftware.kryonet.Server;
 import com.esotericsoftware.kryo.Kryo;
+import com.mygame.game_server.items.Arrow;
 import com.mygame.game_server.models.Player;
 import com.mygame.game_server.models.World;
 import com.mygame.game_server.packets.*;
@@ -39,6 +40,8 @@ public class KryoNetServer {
         kryo.register(GamePoint.class);
         kryo.register(ArrayList.class);
         kryo.register(ChopTreeCommand.class);
+        kryo.register(Arrow.class);
+        kryo.register(ArrowFiredCommand.class);
     }
     private void startWorldUpdateLoop() {
         new Thread(() -> {
