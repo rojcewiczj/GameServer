@@ -13,7 +13,8 @@ public class Player {
     public String name;
     public float x = 0;
     public float y = 0;
-
+    public float targetX = 0;
+    public float targetY = 0;
     // ✅ Add inventory
     public final List<Item> inventory = new ArrayList<>();
     public boolean shootingMode = false;
@@ -25,7 +26,7 @@ public class Player {
         // ✅ Start with an axe for now
         inventory.add(new Axe(50));
         inventory.add(new Bow());
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100; i++) {
             inventory.add(new Arrow());
         }
     }

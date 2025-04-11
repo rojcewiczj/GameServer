@@ -3,6 +3,7 @@ package com.mygame.game_server;
 import com.esotericsoftware.kryonet.Server;
 import com.esotericsoftware.kryo.Kryo;
 import com.mygame.game_server.items.Arrow;
+import com.mygame.game_server.models.NPC;
 import com.mygame.game_server.models.Player;
 import com.mygame.game_server.models.World;
 import com.mygame.game_server.packets.*;
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.esotericsoftware.kryonet.Connection;
 import java.util.List;
 import java.io.IOException;
+
 
 @Component
 public class KryoNetServer {
@@ -42,43 +44,126 @@ public class KryoNetServer {
         kryo.register(ChopTreeCommand.class);
         kryo.register(Arrow.class);
         kryo.register(ArrowFiredCommand.class);
+        kryo.register(ArrowData.class);
+        kryo.register(MoveNPCCommand.class);
+        kryo.register(NpcSnapshot.class);
     }
+
+    private void startArrowUpdateLoop() {
+        new Thread(() -> {
+            while (true) {
+                for (ArrowEntity arrow : world.arrows) {
+                    arrow.update(world.trees);
+                }
+                world.arrows.removeIf(ArrowEntity::shouldDespawn);
+
+                try {
+                    Thread.sleep(16); // ~60 FPS
+                } catch (InterruptedException ignored) {}
+            }
+        }, "ArrowUpdateLoop").start();
+    }
+
     private void startWorldUpdateLoop() {
         new Thread(() -> {
             while (true) {
-                // 1. Send player positions using PlayerSnapshot
+                float playerSpeed = 4f;
+                float npcSpeed = 3f;
+
+                // ✅ 0. Move players toward their targets with collision
+                for (Player p : players.values()) {
+                    float dx = p.targetX - p.x;
+                    float dy = p.targetY - p.y;
+                    float dist = (float) Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > playerSpeed) {
+                        float nextX = p.x + dx / dist * playerSpeed;
+                        float nextY = p.y + dy / dist * playerSpeed;
+                        if (!world.isBlocked(nextX, nextY)) {
+                            p.x = nextX;
+                            p.y = nextY;
+                        }
+                    } else {
+                        p.x = p.targetX;
+                        p.y = p.targetY;
+                    }
+                }
+
+                // ✅ 0.5 Move NPCs toward their targets with collision
+                for (NPC npc : world.npcs) {
+                    float dx = npc.targetX - npc.x;
+                    float dy = npc.targetY - npc.y;
+                    float dist = (float) Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > npcSpeed) {
+                        float nextX = npc.x + dx / dist * npcSpeed;
+                        float nextY = npc.y + dy / dist * npcSpeed;
+                        if (!world.isBlocked(nextX, nextY)) {
+                            npc.x = nextX;
+                            npc.y = nextY;
+                        }
+                    } else {
+                        npc.x = npc.targetX;
+                        npc.y = npc.targetY;
+                    }
+                }
+
+                // ✅ 1. Broadcast player snapshots to all
                 WorldState state = new WorldState();
                 List<PlayerSnapshot> snapshots = new ArrayList<>();
-
                 for (Player p : players.values()) {
                     snapshots.add(new PlayerSnapshot(p.id, p.x, p.y));
                 }
-
                 state.players = snapshots;
                 server.sendToAllTCP(state);
 
+                // ✅ 2. Send per-player chunk updates (trees, arrows, npcs)
                 for (Map.Entry<Connection, Player> entry : players.entrySet()) {
                     Connection conn = entry.getKey();
                     Player p = entry.getValue();
 
                     WorldChunkUpdate chunk = new WorldChunkUpdate();
                     chunk.trees = world.getTreesInView(p.x, p.y, 800, 600);
-                    System.out.println("Sent " + chunk.trees.size() + " trees to player " + p.id);// 🎯 player's actual position
+                    chunk.arrows = new ArrayList<>();
+                    chunk.npcs = new ArrayList<>();
+
+                    int halfW = 800 / 2;
+                    int halfH = 600 / 2;
+                    int minX = (int) p.x - halfW;
+                    int minY = (int) p.y - halfH;
+                    int maxX = (int) p.x + halfW;
+                    int maxY = (int) p.y + halfH;
+
+                    for (ArrowEntity arrow : world.arrows) {
+                        if (arrow.x >= minX && arrow.x <= maxX && arrow.y >= minY && arrow.y <= maxY) {
+                            chunk.arrows.add(new ArrowData(arrow.id, arrow.x, arrow.y, arrow.vx, arrow.vy));
+                        }
+                    }
+
+                    for (NPC npc : world.npcs) {
+                        if (npc.x >= minX && npc.x <= maxX && npc.y >= minY && npc.y <= maxY) {
+                            chunk.npcs.add(new NpcSnapshot(npc.id, npc.x, npc.y));
+                        }
+                    }
+
                     conn.sendTCP(chunk);
                 }
 
                 try {
-                    Thread.sleep(1000); // send update every second
+                    Thread.sleep(50); // ~20 FPS server update
                 } catch (InterruptedException ignored) {}
             }
-        }).start();
+        }, "WorldChunkUpdateLoop").start();
     }
+
     @PostConstruct
     public void start() throws IOException {
         server.addListener(new ServerListener(players, nextPlayerId, world));
         server.bind(54555, 54777);
         server.start();
         System.out.println("✅ KryoNet Server started on ports 54555 (TCP), 54777 (UDP)");
-        startWorldUpdateLoop(); // <- add this
+
+        startArrowUpdateLoop();   // Run game logic smoothly
+        startWorldUpdateLoop();   // Stream state at a stable rate
     }
 }

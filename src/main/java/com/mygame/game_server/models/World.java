@@ -1,5 +1,6 @@
 package com.mygame.game_server.models;
 
+import com.mygame.game_server.ArrowEntity;
 import com.mygame.game_server.GamePoint;
 
 import java.awt.*;
@@ -11,7 +12,10 @@ public class World {
     public final int width = 2000;
     public final int height = 2000;
     public final List<GamePoint> trees = new ArrayList<>();
-
+    public final List<ArrowEntity> arrows = new ArrayList<>();
+    public List<NPC> npcs = new ArrayList<>();
+    public static final float TREE_RADIUS = 16f;
+    public static final float PLAYER_RADIUS = 12f;
     public World() {
         Random rand = new Random();
         // Generate clusters
@@ -39,7 +43,18 @@ public class World {
             trees.add(new GamePoint(x, y));
         }
     }
-
+    public boolean isBlocked(float x, float y) {
+        for (GamePoint tree : trees) {
+            float dx = tree.x - x;
+            float dy = tree.y - y;
+            float distSq = dx * dx + dy * dy;
+            float collisionDist = TREE_RADIUS + PLAYER_RADIUS;
+            if (distSq < collisionDist * collisionDist) {
+                return true;
+            }
+        }
+        return false;
+    }
     public List<GamePoint> getTreesInView(float x, float y, int viewWidth, int viewHeight) {
         List<GamePoint> visible = new ArrayList<>();
         int halfW = viewWidth / 2;
